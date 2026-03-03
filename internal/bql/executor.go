@@ -32,6 +32,7 @@ type querier interface {
 type Executor struct {
 	db            *sql.DB
 	dialect       appbeads.SQLDialect
+	schema        appbeads.SchemaVariant
 	cacheManager  cachemanager.CacheManager[string, []beads.Issue]
 	depGraphCache cachemanager.CacheManager[string, *DependencyGraph]
 }
@@ -43,15 +44,23 @@ const depGraphCacheKey = "__dependency_graph__"
 func NewExecutor(
 	db *sql.DB,
 	dialect appbeads.SQLDialect,
+	schema appbeads.SchemaVariant,
 	cacheManager cachemanager.CacheManager[string, []beads.Issue],
 	depGraphCache cachemanager.CacheManager[string, *DependencyGraph],
 ) *Executor {
 	return &Executor{
 		db:            db,
 		dialect:       dialect,
+		schema:        schema,
 		cacheManager:  cacheManager,
 		depGraphCache: depGraphCache,
 	}
+}
+
+// isFullSchema reports whether this executor should include GasTown agent columns.
+// Empty schema defaults to SchemaFull for safety.
+func (e *Executor) isFullSchema() bool {
+	return e.schema == "" || e.schema == appbeads.SchemaFull
 }
 
 // maxExpandIterations is the safety limit for unlimited depth expansion.
@@ -232,6 +241,17 @@ func (e *Executor) executeBaseQuery(query *Query, q querier) ([]beads.Issue, err
 	whereClause, orderBy, params := builder.Build()
 
 	// Construct main query WITHOUT dependency subqueries
+	gasTownCols := ""
+	if e.isFullSchema() {
+		gasTownCols = `,
+			i.hook_bead,
+			i.role_bead,
+			i.agent_state,
+			i.last_activity,
+			i.role_type,
+			i.rig,
+			i.mol_type`
+	}
 	//nolint:gosec // G201: softDeleteFilter returns hardcoded SQL fragments with table alias, not user input
 	sqlQuery := fmt.Sprintf(`
 		SELECT
@@ -253,17 +273,10 @@ func (e *Executor) executeBaseQuery(query *Query, q querier) ([]beads.Issue, err
 			i.created_by,
 			i.updated_at,
 			i.closed_at,
-			i.close_reason,
-			i.hook_bead,
-			i.role_bead,
-			i.agent_state,
-			i.last_activity,
-			i.role_type,
-			i.rig,
-			i.mol_type
+			i.close_reason%s
 		FROM issues i
 		WHERE %s
-	`, e.softDeleteFilter("i"))
+	`, gasTownCols, e.softDeleteFilter("i"))
 
 	if whereClause != "" {
 		sqlQuery += " AND " + whereClause //nolint:gosec // whereClause is built from validated BQL fields, not raw user input
@@ -357,16 +370,17 @@ func (e *Executor) scanIssuesBase(rows *sql.Rows) ([]beads.Issue, error) {
 			createdBy          sql.NullString
 			closedAt           sql.NullTime
 			closeReason        sql.NullString
-			hookBead           sql.NullString
-			roleBead           sql.NullString
-			agentState         sql.NullString
-			lastActivity       sql.NullTime
-			roleType           sql.NullString
-			rig                sql.NullString
-			molType            sql.NullString
+			// GasTown columns — only populated when schema == SchemaFull
+			hookBead     sql.NullString
+			roleBead     sql.NullString
+			agentState   sql.NullString
+			lastActivity sql.NullTime
+			roleType     sql.NullString
+			rig          sql.NullString
+			molType      sql.NullString
 		)
 
-		err := rows.Scan(
+		scanArgs := []any{
 			&issue.ID,
 			&issue.TitleText,
 			&description,
@@ -386,15 +400,14 @@ func (e *Executor) scanIssuesBase(rows *sql.Rows) ([]beads.Issue, error) {
 			&issue.UpdatedAt,
 			&closedAt,
 			&closeReason,
-			&hookBead,
-			&roleBead,
-			&agentState,
-			&lastActivity,
-			&roleType,
-			&rig,
-			&molType,
-		)
-		if err != nil {
+		}
+		if e.isFullSchema() {
+			scanArgs = append(scanArgs,
+				&hookBead, &roleBead, &agentState, &lastActivity, &roleType, &rig, &molType,
+			)
+		}
+
+		if err := rows.Scan(scanArgs...); err != nil {
 			log.ErrorErr(log.CatDB, "Scan failed", err)
 			return nil, fmt.Errorf("scan error: %w", err)
 		}
@@ -435,26 +448,28 @@ func (e *Executor) scanIssuesBase(rows *sql.Rows) ([]beads.Issue, error) {
 		if closeReason.Valid {
 			issue.CloseReason = closeReason.String
 		}
-		if hookBead.Valid {
-			issue.HookBead = hookBead.String
-		}
-		if roleBead.Valid {
-			issue.RoleBead = roleBead.String
-		}
-		if agentState.Valid {
-			issue.AgentState = agentState.String
-		}
-		if lastActivity.Valid {
-			issue.LastActivity = lastActivity.Time
-		}
-		if roleType.Valid {
-			issue.RoleType = roleType.String
-		}
-		if rig.Valid {
-			issue.Rig = rig.String
-		}
-		if molType.Valid {
-			issue.MolType = molType.String
+		if e.isFullSchema() {
+			if hookBead.Valid {
+				issue.HookBead = hookBead.String
+			}
+			if roleBead.Valid {
+				issue.RoleBead = roleBead.String
+			}
+			if agentState.Valid {
+				issue.AgentState = agentState.String
+			}
+			if lastActivity.Valid {
+				issue.LastActivity = lastActivity.Time
+			}
+			if roleType.Valid {
+				issue.RoleType = roleType.String
+			}
+			if rig.Valid {
+				issue.Rig = rig.String
+			}
+			if molType.Valid {
+				issue.MolType = molType.String
+			}
 		}
 
 		issues = append(issues, issue)

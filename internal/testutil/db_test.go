@@ -40,6 +40,57 @@ func TestNewTestDB_TablesExist(t *testing.T) {
 	require.NoError(t, err, "view ready_issues should be queryable")
 }
 
+func TestNewClassicTestDB_HasNoGasTownColumns(t *testing.T) {
+	db := NewClassicTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	gasTownCols := []string{"hook_bead", "role_bead", "agent_state", "last_activity", "role_type", "rig", "mol_type"}
+	rows, err := db.Query(`PRAGMA table_info(issues)`)
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+
+	var presentCols []string
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var dfltValue any
+		require.NoError(t, rows.Scan(&cid, &name, &colType, &notNull, &dfltValue, &pk))
+		for _, g := range gasTownCols {
+			if name == g {
+				presentCols = append(presentCols, name)
+			}
+		}
+	}
+	require.NoError(t, rows.Err())
+	require.Empty(t, presentCols, "classic schema must not contain GasTown columns: %v", presentCols)
+}
+
+func TestNewClassicBuilder_WithStandardTestData_Succeeds(t *testing.T) {
+	db := NewClassicTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	NewClassicBuilder(t, db).WithStandardTestData().Build()
+
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM issues`).Scan(&count)
+	require.NoError(t, err)
+	require.Equal(t, 6, count, "expected 6 issues from standard test data")
+}
+
+func TestNewBuilder_FullSchema_StillInsertsGasTownColumns(t *testing.T) {
+	db := NewTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	NewBuilder(t, db).WithIssue("i1", HookBead("hook-val"), RoleBead("role-val")).Build()
+
+	var hookBead, roleBead string
+	err := db.QueryRow(`SELECT hook_bead, role_bead FROM issues WHERE id = 'i1'`).Scan(&hookBead, &roleBead)
+	require.NoError(t, err)
+	require.Equal(t, "hook-val", hookBead)
+	require.Equal(t, "role-val", roleBead)
+}
+
 func TestNewTestDB_IssueColumns(t *testing.T) {
 	db := NewTestDB(t)
 	defer func() { _ = db.Close() }()

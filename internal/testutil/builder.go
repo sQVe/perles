@@ -18,15 +18,23 @@ type depData struct {
 type Builder struct {
 	t       *testing.T
 	db      *sql.DB
+	classic bool
 	issues  []issueData
 	deps    []depData
 	blocked []string
 }
 
-// NewBuilder creates a builder for the given test database.
+// NewBuilder creates a builder for the given test database (full bd schema).
 func NewBuilder(t *testing.T, db *sql.DB) *Builder {
 	t.Helper()
 	return &Builder{t: t, db: db}
+}
+
+// NewClassicBuilder creates a builder for a classic (br) schema database.
+// insertIssue omits the seven GasTown agent columns.
+func NewClassicBuilder(t *testing.T, db *sql.DB) *Builder {
+	t.Helper()
+	return &Builder{t: t, db: db, classic: true}
 }
 
 // WithIssue adds an issue with optional configuration.
@@ -70,6 +78,16 @@ func (b *Builder) Build() {
 
 func (b *Builder) insertIssue(issue issueData) {
 	b.t.Helper()
+	if b.classic {
+		_, err := b.db.Exec(
+			`INSERT INTO issues (id, title, description, status, priority, issue_type, assignee, sender, ephemeral, pinned, is_template, created_at, created_by, updated_at, closed_at, close_reason, deleted_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			issue.id, issue.title, issue.description, issue.status, issue.priority,
+			issue.issueType, issue.assignee, issue.sender, issue.ephemeral, issue.pinned, issue.isTemplate, issue.createdAt, issue.createdBy, issue.updatedAt, issue.closedAt, issue.closeReason, issue.deletedAt,
+		)
+		require.NoError(b.t, err)
+		return
+	}
 	_, err := b.db.Exec(
 		`INSERT INTO issues (id, title, description, status, priority, issue_type, assignee, sender, ephemeral, pinned, is_template, created_at, created_by, updated_at, closed_at, close_reason, deleted_at, hook_bead, role_bead, agent_state, last_activity, role_type, rig, mol_type)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

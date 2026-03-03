@@ -14,6 +14,7 @@ import (
 	"github.com/zjrosen/perles/communityworkflows"
 	"github.com/zjrosen/perles/internal/app"
 	beads "github.com/zjrosen/perles/internal/beads/domain"
+	appbeads "github.com/zjrosen/perles/internal/beads/application"
 	infrabeads "github.com/zjrosen/perles/internal/beads/infrastructure"
 	"github.com/zjrosen/perles/internal/bql"
 	"github.com/zjrosen/perles/internal/cachemanager"
@@ -248,16 +249,19 @@ func runApp(cmd *cobra.Command, args []string) error {
 	defer func() { _ = client.Close() }()
 
 	// Version check - query bd_version from database metadata table
-	currentVersion, err := client.Version()
-	if err != nil {
-		// Very old database without bd_version metadata - show outdated view
-		log.Debug(log.CatBeads, "Version check failed", "error", err)
-		return runOutdatedMode("unknown", beads.MinBeadsVersion)
-	}
-
-	log.Debug(log.CatBeads, "Beads Database Version", "version", currentVersion, "minRequiredVersion", beads.MinBeadsVersion)
-	if err := beads.CheckVersion(currentVersion); err != nil {
-		return runOutdatedMode(currentVersion, beads.MinBeadsVersion)
+	// Classic (br) schema has no metadata table, skip version check entirely
+	if client.Schema() != appbeads.SchemaClassic {
+		currentVersion, err := client.Version()
+		if err != nil {
+			log.Debug(log.CatBeads, "Version check failed, showing outdated view", "error", err)
+			return runOutdatedMode("unknown", beads.MinBeadsVersion)
+		}
+		log.Debug(log.CatBeads, "Beads Database Version", "version", currentVersion, "minRequiredVersion", beads.MinBeadsVersion)
+		if err := beads.CheckVersion(currentVersion); err != nil {
+			return runOutdatedMode(currentVersion, beads.MinBeadsVersion)
+		}
+	} else {
+		log.Debug(log.CatBeads, "Classic (br) schema detected, skipping version check")
 	}
 
 	// Handle --no-auto-refresh flag (negated logic)

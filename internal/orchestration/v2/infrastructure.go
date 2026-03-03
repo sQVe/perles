@@ -236,7 +236,7 @@ func NewInfrastructure(cfg InfrastructureConfig) (*Infrastructure, error) {
 	turnEnforcer := handler.NewTurnCompletionTracker()
 
 	// Create BDTaskExecutor for syncing v2 state changes to BD tracker
-	beadsExec := infrabeads.NewBDExecutor(cfg.WorkDir, cfg.BeadsDir)
+	beadsExec := infrabeads.NewBDExecutor(cfg.WorkDir, cfg.BeadsDir, infrabeads.DetectSchemaVariant(cfg.BeadsDir))
 
 	// Register all command handlers
 	registerHandlers(

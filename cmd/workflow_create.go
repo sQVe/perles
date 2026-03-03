@@ -57,7 +57,7 @@ func runWorkflowCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create BDExecutor with working directory context
-	executor := infrabeads.NewBDExecutor("", "")
+	executor := infrabeads.NewBDExecutor("", "", infrabeads.DetectSchemaVariant(cfg.ResolvedBeadsDir))
 
 	// Create WorkflowCreator with dependencies
 	creator := appreg.NewWorkflowCreator(registryService, executor, cfg.Orchestration.Templates)

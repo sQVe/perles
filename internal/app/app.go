@@ -178,7 +178,11 @@ func NewWithConfig(
 
 	flagService := flags.New(cfg.Flags)
 
-	beadsExec := infrabeads.NewBDExecutor(workDir, cfg.ResolvedBeadsDir)
+	schema := appbeads.SchemaFull
+	if client != nil {
+		schema = client.Schema()
+	}
+	beadsExec := infrabeads.NewBDExecutor(workDir, cfg.ResolvedBeadsDir, schema)
 
 	// Create shared services with session repository from SQLite database
 	var sessionRepo domain.SessionRepository
@@ -189,7 +193,7 @@ func NewWithConfig(
 	// Create BQL executor only if client is available (nil when beads DB not present)
 	var bqlExec bql.BQLExecutor
 	if client != nil {
-		bqlExec = bql.NewExecutor(client.DB(), client.Dialect(), bqlCache, depGraphCache)
+		bqlExec = bql.NewExecutor(client.DB(), client.Dialect(), client.Schema(), bqlCache, depGraphCache)
 	}
 
 	services := mode.Services{

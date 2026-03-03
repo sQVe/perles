@@ -115,6 +115,11 @@ func (c *DoltClient) Dialect() appbeads.SQLDialect {
 	return appbeads.DialectMySQL
 }
 
+// Schema returns the schema variant (always full for Dolt backend).
+func (c *DoltClient) Schema() appbeads.SchemaVariant {
+	return appbeads.SchemaFull
+}
+
 // Version returns the beads version from the database metadata table.
 func (c *DoltClient) Version() (string, error) {
 	var version string

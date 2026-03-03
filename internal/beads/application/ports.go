@@ -16,6 +16,16 @@ const (
 	DialectMySQL SQLDialect = "mysql"
 )
 
+// SchemaVariant identifies which columns are present in the issues table.
+type SchemaVariant string
+
+const (
+	// SchemaFull is the bd schema with all GasTown agent columns.
+	SchemaFull SchemaVariant = "full"
+	// SchemaClassic is the br schema without GasTown agent columns.
+	SchemaClassic SchemaVariant = "classic"
+)
+
 // DBClient provides database access with backend-agnostic operations.
 type DBClient interface {
 	VersionReader
@@ -29,6 +39,9 @@ type DBClient interface {
 
 	// Dialect returns the SQL dialect for query building.
 	Dialect() SQLDialect
+
+	// Schema returns the schema variant (full or classic) for column availability.
+	Schema() SchemaVariant
 
 	// Close closes the database connection.
 	Close() error

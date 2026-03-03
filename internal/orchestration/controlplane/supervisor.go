@@ -528,7 +528,7 @@ func (s *defaultSupervisor) AllocateResources(ctx context.Context, inst *Workflo
 	mcpCoordServer := mcp.NewCoordinatorServerWithV2Adapter(
 		workDir,
 		port,
-		infrabeads.NewBDExecutor(workDir, ""),
+		infrabeads.NewBDExecutor(workDir, "", infrabeads.DetectSchemaVariant(s.beadsDir)),
 		infra.Core.Adapter,
 	)
 

@@ -21,6 +21,8 @@ var _ appbeads.IssueExecutor = (*BDExecutor)(nil)
 type BDExecutor struct {
 	workDir  string
 	beadsDir string
+	schema   appbeads.SchemaVariant
+	binary   string
 	// runFunc is an optional override for runBeads, used in tests.
 	runFunc func(args ...string) (string, error)
 }
@@ -28,8 +30,13 @@ type BDExecutor struct {
 // NewBDExecutor creates a new BDExecutor.
 // workDir is the working directory for command execution.
 // beadsDir is the path to the .beads directory (sets BEADS_DIR env var).
-func NewBDExecutor(workDir, beadsDir string) *BDExecutor {
-	return &BDExecutor{workDir: workDir, beadsDir: beadsDir}
+// schema determines which CLI binary to use: "br" for classic, "bd" for full.
+func NewBDExecutor(workDir, beadsDir string, schema appbeads.SchemaVariant) *BDExecutor {
+	binary := "bd"
+	if schema == appbeads.SchemaClassic {
+		binary = "br"
+	}
+	return &BDExecutor{workDir: workDir, beadsDir: beadsDir, schema: schema, binary: binary}
 }
 
 // runBeads executes a bd command and returns stdout and any error.
@@ -38,7 +45,7 @@ func (e *BDExecutor) runBeads(args ...string) (string, error) {
 		return e.runFunc(args...)
 	}
 	//nolint:gosec // G204: args come from controlled sources
-	cmd := exec.Command("bd", args...)
+	cmd := exec.Command(e.binary, args...)
 	if e.workDir != "" {
 		cmd.Dir = e.workDir
 	}
@@ -52,9 +59,9 @@ func (e *BDExecutor) runBeads(args ...string) (string, error) {
 
 	if err := cmd.Run(); err != nil {
 		if stderr.Len() > 0 {
-			return "", fmt.Errorf("bd %s failed: %s", args[0], strings.TrimSpace(stderr.String()))
+			return "", fmt.Errorf("%s %s failed: %s", e.binary, args[0], strings.TrimSpace(stderr.String()))
 		}
-		return "", fmt.Errorf("bd %s failed: %w", args[0], err)
+		return "", fmt.Errorf("%s %s failed: %w", e.binary, args[0], err)
 	}
 
 	return strings.TrimSpace(stdout.String()), nil
@@ -320,14 +327,23 @@ func (e *BDExecutor) ShowIssue(issueID string) (*domain.Issue, error) {
 	return &issues[0], nil
 }
 
-// AddComment executes 'bd comment <id> --author <author> -- <text>'.
+// AddComment adds a comment to an issue.
+// bd path: 'bd comment <id> --author <author> -- <text>'
+// br path: 'br comments add <id> --author <author> --message <text>'
 func (e *BDExecutor) AddComment(issueID, author, text string) error {
 	start := time.Now()
 	defer func() {
 		log.Debug(log.CatBeads, "AddComment completed", "issueID", issueID, "author", author, "duration", time.Since(start))
 	}()
 
-	if _, err := e.runBeads("comment", issueID, "--author", author, "--", text); err != nil {
+	var args []string
+	if e.schema == appbeads.SchemaClassic {
+		args = []string{"comments", "add", issueID, "--author", author, "--message", text}
+	} else {
+		args = []string{"comment", issueID, "--author", author, "--", text}
+	}
+
+	if _, err := e.runBeads(args...); err != nil {
 		log.Error(log.CatBeads, "AddComment failed", "issueID", issueID, "error", err)
 		return err
 	}
@@ -342,9 +358,7 @@ func (e *BDExecutor) CreateEpic(title, description string, labels []string) (dom
 	}()
 
 	args := []string{"create", title, "-t", "epic", "-d", description, "--json"}
-	for _, l := range labels {
-		args = append(args, "--label", l)
-	}
+	args = e.appendLabels(args, labels)
 
 	output, err := e.runBeads(args...)
 	if err != nil {
@@ -362,6 +376,22 @@ func (e *BDExecutor) CreateEpic(title, description string, labels []string) (dom
 	return result, nil
 }
 
+// appendLabels appends label flags to args.
+// bd path: repeating '--label l' for each label.
+// br path: '--labels l1,l2' (comma-joined); skipped entirely when labels is empty.
+func (e *BDExecutor) appendLabels(args []string, labels []string) []string {
+	if e.schema == appbeads.SchemaClassic {
+		if len(labels) > 0 {
+			args = append(args, "--labels", strings.Join(labels, ","))
+		}
+	} else {
+		for _, l := range labels {
+			args = append(args, "--label", l)
+		}
+	}
+	return args
+}
+
 // CreateTask creates a new task as a child of an epic via bd CLI.
 func (e *BDExecutor) CreateTask(title, description, parentID, assignee string, labels []string) (domain.CreateResult, error) {
 	start := time.Now()
@@ -373,9 +403,7 @@ func (e *BDExecutor) CreateTask(title, description, parentID, assignee string, l
 	if assignee != "" {
 		args = append(args, "--assignee", assignee)
 	}
-	for _, l := range labels {
-		args = append(args, "--label", l)
-	}
+	args = e.appendLabels(args, labels)
 
 	output, err := e.runBeads(args...)
 	if err != nil {

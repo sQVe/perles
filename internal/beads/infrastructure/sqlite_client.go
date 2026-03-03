@@ -24,6 +24,7 @@ var (
 type SQLiteClient struct {
 	db     *sql.DB
 	dbPath string
+	schema appbeads.SchemaVariant
 }
 
 // NewSQLiteClient creates a client connected to the beads database.
@@ -40,8 +41,12 @@ func NewSQLiteClient(beadsDir string) (*SQLiteClient, error) {
 		log.ErrorErr(log.CatDB, "Failed to ping database", err, "path", dbPath)
 		return nil, err
 	}
-	log.Info(log.CatDB, "Connected to database", "path", dbPath)
-	return &SQLiteClient{db: db, dbPath: dbPath}, nil
+	schema, err := detectSchema(db)
+	if err != nil {
+		return nil, fmt.Errorf("detecting schema: %w", err)
+	}
+	log.Info(log.CatDB, "Connected to database", "path", dbPath, "schema", schema)
+	return &SQLiteClient{db: db, dbPath: dbPath, schema: schema}, nil
 }
 
 // Close closes the database connection.
@@ -63,6 +68,34 @@ func (c *SQLiteClient) DB() *sql.DB {
 // Dialect returns the SQL dialect (SQLite).
 func (c *SQLiteClient) Dialect() appbeads.SQLDialect {
 	return appbeads.DialectSQLite
+}
+
+// Schema returns the schema variant for this database.
+func (c *SQLiteClient) Schema() appbeads.SchemaVariant {
+	return c.schema
+}
+
+// detectSchema probes the issues table to determine which schema variant is present.
+// Full schema (bd) contains the hook_bead column; classic schema (br) does not.
+func detectSchema(db *sql.DB) (appbeads.SchemaVariant, error) {
+	var tableCount int
+	err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='issues'").Scan(&tableCount)
+	if err != nil {
+		return "", fmt.Errorf("detectSchema: querying sqlite_master: %w", err)
+	}
+	if tableCount == 0 {
+		return "", fmt.Errorf("detectSchema: issues table not found")
+	}
+
+	var colCount int
+	err = db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('issues') WHERE name = 'hook_bead'").Scan(&colCount)
+	if err != nil {
+		return "", fmt.Errorf("detectSchema: probing hook_bead column: %w", err)
+	}
+	if colCount > 0 {
+		return appbeads.SchemaFull, nil
+	}
+	return appbeads.SchemaClassic, nil
 }
 
 // Version returns the beads version from the database metadata table.

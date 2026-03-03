@@ -18,17 +18,18 @@ func TestBDExecutor_ImplementsIssueExecutor(t *testing.T) {
 func TestBDExecutor_NewBDExecutor(t *testing.T) {
 	workDir := "/some/work/dir"
 	beadsDir := "/some/beads/dir"
-	executor := NewBDExecutor(workDir, beadsDir)
+	executor := NewBDExecutor(workDir, beadsDir, appbeads.SchemaFull)
 
 	require.NotNil(t, executor, "NewBDExecutor returned nil")
 	require.Equal(t, workDir, executor.workDir)
 	require.Equal(t, beadsDir, executor.beadsDir)
+	require.Equal(t, "bd", executor.binary)
 }
 
 // TestBDExecutor_UpdateTitle_MethodExists verifies UpdateTitle exists with correct signature.
 // This is a compile-time check that ensures the method is implemented.
 func TestBDExecutor_UpdateTitle_MethodExists(t *testing.T) {
-	executor := NewBDExecutor("", "")
+	executor := NewBDExecutor("", "", appbeads.SchemaFull)
 
 	// Verify the method exists and has the correct signature.
 	// We call it with empty values - it will fail due to missing bd CLI,
@@ -40,7 +41,7 @@ func TestBDExecutor_UpdateTitle_MethodExists(t *testing.T) {
 
 // TestBDExecutor_UpdateDescription_MethodExists verifies UpdateDescription exists with correct signature.
 func TestBDExecutor_UpdateDescription_MethodExists(t *testing.T) {
-	executor := NewBDExecutor("", "")
+	executor := NewBDExecutor("", "", appbeads.SchemaFull)
 
 	var updateDescFunc func(issueID, description string) error = executor.UpdateDescription
 
@@ -49,7 +50,7 @@ func TestBDExecutor_UpdateDescription_MethodExists(t *testing.T) {
 
 // TestBDExecutor_MethodSignatureConsistency verifies UpdateTitle has same signature as UpdateDescription.
 func TestBDExecutor_MethodSignatureConsistency(t *testing.T) {
-	executor := NewBDExecutor("", "")
+	executor := NewBDExecutor("", "", appbeads.SchemaFull)
 
 	// Both methods should have signature: func(string, string) error
 	var titleFunc func(string, string) error = executor.UpdateTitle
@@ -61,7 +62,7 @@ func TestBDExecutor_MethodSignatureConsistency(t *testing.T) {
 
 // TestBDExecutor_UpdateNotes_MethodExists verifies UpdateNotes exists with correct signature.
 func TestBDExecutor_UpdateNotes_MethodExists(t *testing.T) {
-	executor := NewBDExecutor("", "")
+	executor := NewBDExecutor("", "", appbeads.SchemaFull)
 
 	var updateNotesFunc func(issueID, notes string) error = executor.UpdateNotes
 
@@ -70,7 +71,7 @@ func TestBDExecutor_UpdateNotes_MethodExists(t *testing.T) {
 
 // TestBDExecutor_UpdateNotes_MethodSignatureConsistency verifies UpdateNotes has same signature as UpdateDescription.
 func TestBDExecutor_UpdateNotes_MethodSignatureConsistency(t *testing.T) {
-	executor := NewBDExecutor("", "")
+	executor := NewBDExecutor("", "", appbeads.SchemaFull)
 
 	// Both methods should have signature: func(string, string) error
 	var notesFunc func(string, string) error = executor.UpdateNotes
@@ -81,8 +82,8 @@ func TestBDExecutor_UpdateNotes_MethodSignatureConsistency(t *testing.T) {
 }
 
 // newTestExecutor creates a BDExecutor with a runFunc that captures the args.
-func newTestExecutor(fn func(args ...string) (string, error)) *BDExecutor {
-	e := NewBDExecutor("", "")
+func newTestExecutor(schema appbeads.SchemaVariant, fn func(args ...string) (string, error)) *BDExecutor {
+	e := NewBDExecutor("", "", schema)
 	e.runFunc = fn
 	return e
 }
@@ -90,7 +91,7 @@ func newTestExecutor(fn func(args ...string) (string, error)) *BDExecutor {
 // TestBDExecutor_UpdateIssue_SingleField verifies correct CLI args when only Title is set.
 func TestBDExecutor_UpdateIssue_SingleField(t *testing.T) {
 	var captured []string
-	executor := newTestExecutor(func(args ...string) (string, error) {
+	executor := newTestExecutor(appbeads.SchemaFull, func(args ...string) (string, error) {
 		captured = args
 		return "", nil
 	})
@@ -107,7 +108,7 @@ func TestBDExecutor_UpdateIssue_SingleField(t *testing.T) {
 // Labels require a separate bd update call because --set-labels cannot be combined with other flags.
 func TestBDExecutor_UpdateIssue_MultipleFields(t *testing.T) {
 	var calls [][]string
-	executor := newTestExecutor(func(args ...string) (string, error) {
+	executor := newTestExecutor(appbeads.SchemaFull, func(args ...string) (string, error) {
 		cp := make([]string, len(args))
 		copy(cp, args)
 		calls = append(calls, cp)
@@ -143,7 +144,7 @@ func TestBDExecutor_UpdateIssue_MultipleFields(t *testing.T) {
 // Labels are sent in a separate bd update call.
 func TestBDExecutor_UpdateIssue_AllFields(t *testing.T) {
 	var calls [][]string
-	executor := newTestExecutor(func(args ...string) (string, error) {
+	executor := newTestExecutor(appbeads.SchemaFull, func(args ...string) (string, error) {
 		cp := make([]string, len(args))
 		copy(cp, args)
 		calls = append(calls, cp)
@@ -193,7 +194,7 @@ func TestBDExecutor_UpdateIssue_AllFields(t *testing.T) {
 // TestBDExecutor_UpdateIssue_NoFieldsSet verifies no-op when all fields are nil (no CLI call).
 func TestBDExecutor_UpdateIssue_NoFieldsSet(t *testing.T) {
 	called := false
-	executor := newTestExecutor(func(args ...string) (string, error) {
+	executor := newTestExecutor(appbeads.SchemaFull, func(args ...string) (string, error) {
 		called = true
 		return "", nil
 	})
@@ -207,7 +208,7 @@ func TestBDExecutor_UpdateIssue_NoFieldsSet(t *testing.T) {
 
 // TestBDExecutor_UpdateIssue_ErrorPropagation verifies error is returned with issue ID context.
 func TestBDExecutor_UpdateIssue_ErrorPropagation(t *testing.T) {
-	executor := newTestExecutor(func(args ...string) (string, error) {
+	executor := newTestExecutor(appbeads.SchemaFull, func(args ...string) (string, error) {
 		return "", errors.New("bd update failed: connection refused")
 	})
 
@@ -224,7 +225,7 @@ func TestBDExecutor_UpdateIssue_ErrorPropagation(t *testing.T) {
 // TestBDExecutor_UpdateIssue_MultilineDescription verifies multiline description with combined flags.
 func TestBDExecutor_UpdateIssue_MultilineDescription(t *testing.T) {
 	var captured []string
-	executor := newTestExecutor(func(args ...string) (string, error) {
+	executor := newTestExecutor(appbeads.SchemaFull, func(args ...string) (string, error) {
 		captured = args
 		return "", nil
 	})
@@ -252,7 +253,7 @@ func TestBDExecutor_UpdateIssue_MultilineDescription(t *testing.T) {
 // fetches current labels via ShowIssue and then issues --remove-label for each.
 func TestBDExecutor_UpdateIssue_EmptyLabels(t *testing.T) {
 	var calls [][]string
-	executor := newTestExecutor(func(args ...string) (string, error) {
+	executor := newTestExecutor(appbeads.SchemaFull, func(args ...string) (string, error) {
 		cp := make([]string, len(args))
 		copy(cp, args)
 		calls = append(calls, cp)
@@ -282,7 +283,7 @@ func TestBDExecutor_UpdateIssue_EmptyLabels(t *testing.T) {
 // clearing labels on an issue that has no labels.
 func TestBDExecutor_UpdateIssue_EmptyLabels_AlreadyClear(t *testing.T) {
 	var calls [][]string
-	executor := newTestExecutor(func(args ...string) (string, error) {
+	executor := newTestExecutor(appbeads.SchemaFull, func(args ...string) (string, error) {
 		cp := make([]string, len(args))
 		copy(cp, args)
 		calls = append(calls, cp)
@@ -305,7 +306,7 @@ func TestBDExecutor_UpdateIssue_EmptyLabels_AlreadyClear(t *testing.T) {
 // only the SetLabels call is made (no empty non-label update).
 func TestBDExecutor_UpdateIssue_LabelsOnly(t *testing.T) {
 	var calls [][]string
-	executor := newTestExecutor(func(args ...string) (string, error) {
+	executor := newTestExecutor(appbeads.SchemaFull, func(args ...string) (string, error) {
 		cp := make([]string, len(args))
 		copy(cp, args)
 		calls = append(calls, cp)
@@ -329,7 +330,7 @@ func TestBDExecutor_UpdateIssue_LabelsOnly(t *testing.T) {
 // fields are saved even if the labels call fails (they are independent calls).
 func TestBDExecutor_UpdateIssue_LabelsErrorReturned(t *testing.T) {
 	callCount := 0
-	executor := newTestExecutor(func(args ...string) (string, error) {
+	executor := newTestExecutor(appbeads.SchemaFull, func(args ...string) (string, error) {
 		callCount++
 		if callCount == 2 {
 			return "", errors.New("set-labels failed")
@@ -354,7 +355,7 @@ func TestBDExecutor_UpdateIssue_LabelsErrorReturned(t *testing.T) {
 // (from formmodal when user deselects all) also triggers the clear path.
 func TestBDExecutor_UpdateIssue_NilLabels_ClearsAll(t *testing.T) {
 	var calls [][]string
-	executor := newTestExecutor(func(args ...string) (string, error) {
+	executor := newTestExecutor(appbeads.SchemaFull, func(args ...string) (string, error) {
 		cp := make([]string, len(args))
 		copy(cp, args)
 		calls = append(calls, cp)
@@ -389,4 +390,82 @@ func TestUpdateIssueOptions_ZeroValue(t *testing.T) {
 	require.Nil(t, opts.Labels)
 	require.Nil(t, opts.Assignee)
 	require.Nil(t, opts.Type)
+}
+
+// TestBDExecutor_AddComment_BDPath verifies bd path uses "--" separator before positional text.
+func TestBDExecutor_AddComment_BDPath(t *testing.T) {
+	var captured []string
+	executor := newTestExecutor(appbeads.SchemaFull, func(args ...string) (string, error) {
+		captured = args
+		return "", nil
+	})
+
+	err := executor.AddComment("PROJ-1", "alice", "some text")
+	require.NoError(t, err)
+	require.Equal(t, []string{"comment", "PROJ-1", "--author", "alice", "--", "some text"}, captured)
+}
+
+// TestBDExecutor_AddComment_BRPath verifies br path uses "--message" flag instead of positional text.
+func TestBDExecutor_AddComment_BRPath(t *testing.T) {
+	var captured []string
+	executor := newTestExecutor(appbeads.SchemaClassic, func(args ...string) (string, error) {
+		captured = args
+		return "", nil
+	})
+
+	err := executor.AddComment("PROJ-1", "alice", "some text")
+	require.NoError(t, err)
+	require.Equal(t, []string{"comments", "add", "PROJ-1", "--author", "alice", "--message", "some text"}, captured)
+}
+
+// TestBDExecutor_AddComment_BRPath_TextStartsWithHyphen verifies br path safely handles text starting with '-'.
+func TestBDExecutor_AddComment_BRPath_TextStartsWithHyphen(t *testing.T) {
+	var captured []string
+	executor := newTestExecutor(appbeads.SchemaClassic, func(args ...string) (string, error) {
+		captured = args
+		return "", nil
+	})
+
+	err := executor.AddComment("PROJ-1", "alice", "-v something")
+	require.NoError(t, err)
+	require.Equal(t, []string{"comments", "add", "PROJ-1", "--author", "alice", "--message", "-v something"}, captured)
+}
+
+// TestBDExecutor_CreateEpic_BRPath_WithLabels verifies br path uses "--labels" with comma-joined labels.
+func TestBDExecutor_CreateEpic_BRPath_WithLabels(t *testing.T) {
+	var captured []string
+	executor := newTestExecutor(appbeads.SchemaClassic, func(args ...string) (string, error) {
+		captured = args
+		return `{"id":"PROJ-1","title":"My Epic"}`, nil
+	})
+
+	_, err := executor.CreateEpic("My Epic", "desc", []string{"bug", "p2"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"create", "My Epic", "-t", "epic", "-d", "desc", "--json", "--labels", "bug,p2"}, captured)
+}
+
+// TestBDExecutor_CreateEpic_BRPath_EmptyLabels verifies br path omits "--labels" flag when labels is empty.
+func TestBDExecutor_CreateEpic_BRPath_EmptyLabels(t *testing.T) {
+	var captured []string
+	executor := newTestExecutor(appbeads.SchemaClassic, func(args ...string) (string, error) {
+		captured = args
+		return `{"id":"PROJ-1","title":"My Epic"}`, nil
+	})
+
+	_, err := executor.CreateEpic("My Epic", "desc", []string{})
+	require.NoError(t, err)
+	require.Equal(t, []string{"create", "My Epic", "-t", "epic", "-d", "desc", "--json"}, captured)
+}
+
+// TestBDExecutor_CreateTask_BRPath_WithLabels verifies br path uses "--labels" with comma-joined labels for tasks.
+func TestBDExecutor_CreateTask_BRPath_WithLabels(t *testing.T) {
+	var captured []string
+	executor := newTestExecutor(appbeads.SchemaClassic, func(args ...string) (string, error) {
+		captured = args
+		return `{"id":"PROJ-2","title":"My Task"}`, nil
+	})
+
+	_, err := executor.CreateTask("My Task", "desc", "PROJ-1", "", []string{"feat"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"create", "My Task", "--parent", "PROJ-1", "-t", "task", "-d", "desc", "--json", "--labels", "feat"}, captured)
 }

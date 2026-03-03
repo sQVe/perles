@@ -115,6 +115,17 @@ func LoadMetadata(beadsDir string) (*BeadsMetadata, error) {
 	return &meta, nil
 }
 
+// DetectSchemaVariant opens the SQLite database to detect the schema variant.
+// Returns SchemaFull on any error (safe default — bd is the primary backend).
+func DetectSchemaVariant(beadsDir string) appbeads.SchemaVariant {
+	client, err := NewSQLiteClient(beadsDir)
+	if err != nil {
+		return appbeads.SchemaFull
+	}
+	defer func() { _ = client.Close() }()
+	return client.Schema()
+}
+
 // NewClient creates the appropriate database client based on backend detection.
 // beadsDir should be the resolved .beads directory path.
 func NewClient(beadsDir string) (appbeads.DBClient, error) {

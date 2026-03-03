@@ -29,6 +29,12 @@ func setupDB(t *testing.T, configure func(*testutil.Builder) *testutil.Builder) 
 // newTestExecutor creates an executor with mock caches for testing.
 // Uses testing.TB interface to work with both *testing.T and *testing.B.
 func newTestExecutor(tb testing.TB, db *sql.DB) *Executor {
+	return newTestExecutorWithSchema(tb, db, appbeads.SchemaFull)
+}
+
+// newTestExecutorWithSchema creates an executor with the given schema variant.
+func newTestExecutorWithSchema(tb testing.TB, db *sql.DB, schema appbeads.SchemaVariant) *Executor {
+	tb.Helper()
 	bqlCache := mocks.NewMockCacheManager[string, []beads.Issue](tb)
 	bqlCache.On("Get", mock.Anything, mock.Anything).Return(nil, false).Maybe()
 	bqlCache.On("GetWithRefresh", mock.Anything, mock.Anything, mock.Anything).Return(nil, false).Maybe()
@@ -39,7 +45,7 @@ func newTestExecutor(tb testing.TB, db *sql.DB) *Executor {
 	depGraphCache.On("GetWithRefresh", mock.Anything, mock.Anything, mock.Anything).Return(nil, false).Maybe()
 	depGraphCache.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
-	return NewExecutor(db, appbeads.DialectSQLite, bqlCache, depGraphCache)
+	return NewExecutor(db, appbeads.DialectSQLite, schema, bqlCache, depGraphCache)
 }
 
 func TestExecutor_TypeFilter(t *testing.T) {
@@ -2893,7 +2899,7 @@ func newDoltExecutor(t *testing.T, db *sql.DB) *Executor {
 	depGraphCache.On("GetWithRefresh", mock.Anything, mock.Anything, mock.Anything).Return(nil, false).Maybe()
 	depGraphCache.On("Set", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return().Maybe()
 
-	return NewExecutor(db, appbeads.DialectMySQL, bqlCache, depGraphCache)
+	return NewExecutor(db, appbeads.DialectMySQL, appbeads.SchemaFull, bqlCache, depGraphCache)
 }
 
 func TestDoltDialect_BaseQueryWithoutDeletedAt(t *testing.T) {
@@ -3187,4 +3193,31 @@ func TestBatchLoading_IntegrationFullQueryEquivalence(t *testing.T) {
 	issue = issues[0]
 	require.Equal(t, "test-2", issue.ID)
 	require.Equal(t, "test-6", issue.ParentID)
+}
+
+func TestExecuteQuery_ClassicSchema_NoGasTownError(t *testing.T) {
+	db := testutil.NewClassicTestDB(t)
+	defer func() { _ = db.Close() }()
+
+	executor := newTestExecutorWithSchema(t, db, appbeads.SchemaClassic)
+
+	_, err := executor.Execute("status = open")
+	require.NoError(t, err)
+}
+
+func TestExecuteQuery_FullSchema_GasTownFieldsPopulated(t *testing.T) {
+	db := setupDB(t, func(b *testutil.Builder) *testutil.Builder {
+		return b.WithIssue("test-ga1", testutil.Title("GasTown issue"), testutil.Status("open"))
+	})
+	defer func() { _ = db.Close() }()
+
+	_, err := db.Exec("UPDATE issues SET hook_bead='bd://test-ga1' WHERE id='test-ga1'")
+	require.NoError(t, err)
+
+	executor := newTestExecutorWithSchema(t, db, appbeads.SchemaFull)
+
+	issues, err := executor.Execute("id = test-ga1")
+	require.NoError(t, err)
+	require.Len(t, issues, 1)
+	require.Equal(t, "bd://test-ga1", issues[0].HookBead)
 }
